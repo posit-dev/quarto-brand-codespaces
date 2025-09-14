@@ -1,50 +1,304 @@
-meta:
-  name: World Happiness Report
-  link:
-    home: https://www.worldhappiness.report/
-    
-logo:
-  images:
-    icon:
-      path: ../images/whr_logo.png
-      alt: World Happiness Report icon.
-  small: ../images/whr_logo.png
+---
+title: "World Happiness Report"
+subtitle: "Happiness Trends and Contributing Factors (2011-2024)"
+format: 
+  revealjs:
+    code-fold: false
+    code-summary: "Show code"
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
 
-color:
-  palette:
-    dark-purple: "#93358c"
-    light-purple: "#f8f6fb"
-    teal: "#04afaf"
-    dark-blue: "#086992"
-    hot-pink: "#eb068c"
-    light-blue: "#1aade4"
+```{python}
+#| label: setup
+import pandas as pd
+import numpy as np
+from plotnine import *
+from quarto import theme_brand_plotnine
+from brand_yml import Brand
 
-  background: light-purple
-  foreground: black
-  primary: dark-purple
-  secondary: hot-pink
-  tertiary: light-blue
-  dark: black
+whr = pd.read_csv("data/whr.csv")
 
-typography:
-  fonts:
-    - family: Gotham Book
-      source: file
-      files:
-        - path: fonts/Gotham-Book.ttf
-    - family: Gotham Bold
-      source: file
-      files:
-        - path: fonts/Gotham-Bold.otf
+theme_whr = (
+  theme_minimal()
+  + theme(
+    plot_subtitle=element_text(size=12),
+    plot_title=element_text(size=14)
+  ) 
+)
+```
 
-  base:
-    family: Gotham Book
-    weight: 400
+## Introduction
 
-  headings:
-    family: Gotham Bold
-    color: dark-purple
+This report analyzes the data from the [2025 World Happiness Report](https://www.worldhappiness.report/), which looks at global happiness trends and factors that contribute to national happiness levels from 2011 to 2024. The dataset contains happiness rankings and scores for 169 countries.
 
-  link:
-    color: primary
-    decoration: none
+## Global Happiness Trends
+
+### Overall Trends (2011-2024)
+
+```{python}
+#| label: global-trends
+global_trends = (
+  whr
+  .groupby('year')
+  .agg({
+    'ladder_score': ['mean', 'median', 'min', 'max', 'count']
+  })
+  .round(3)
+)
+
+global_trends.columns = ['mean_happiness', 'median_happiness', 'min_happiness', 'max_happiness', 'countries_count']
+global_trends = global_trends.reset_index()
+
+global_plot = (
+  ggplot(global_trends, aes(x='year', y='mean_happiness')) 
+  + geom_line(size=1.5)
+  + geom_point(size=3)
+  + scale_x_continuous(breaks=range(2011, 2025, 1)) 
+  + scale_y_continuous(limits=(5.2, 5.7), breaks=np.arange(5.2, 5.8, 0.1))
+  + theme_whr
+  + theme(
+    axis_title=element_text(size=12),
+    axis_text=element_text(size=10)
+  ) 
+  + labs(
+    title="Global Average Happiness Over Time (2011-2024)",
+    subtitle="Average happiness has increased over the past 12 years",
+    x="Year",
+    y="Average Happiness Score"
+  ) 
+)
+
+global_plot
+```
+
+#### Key findings
+
+- **Gradual Improvement**: Average global happiness has increased from ~5.39 (2011) to ~5.58 (2024)
+- **2011-2016**: Relatively stable around 5.35-5.40
+- **2017-2019**: Beginning of upward trend
+- **2019-2024**: Higher plateau around 5.50-5.58
+
+## Country-Level Analysis
+
+### Countries with Largest Changes in Happiness
+
+```{python}
+#| label: country-changes
+most_changed_countries = (
+  whr.dropna(subset=["year", "ladder_score"])
+  .groupby("country_name")
+  .apply(
+    lambda g: pd.Series({
+      "first_year": g["year"].min(),
+      "last_year": g["year"].max(),
+      "first_score": g.sort_values("year")["ladder_score"].iloc[0],
+      "last_score": g.sort_values("year")["ladder_score"].iloc[-1],
+    })
+  )
+  .reset_index()
+)
+
+most_changed_countries["change"] = (
+  most_changed_countries["last_score"] - most_changed_countries["first_score"]
+)
+most_changed_countries["years_span"] = (
+  most_changed_countries["last_year"] - most_changed_countries["first_year"]
+)
+
+most_changed_countries = most_changed_countries[most_changed_countries["years_span"] >= 10]
+
+most_changed_countries["improvement"] = most_changed_countries["change"] > 0
+
+most_changed_countries = (
+  most_changed_countries
+  .assign(abs_change=lambda df: df["change"].abs())
+  .groupby("improvement", group_keys=False)
+  .apply(lambda g: g.nlargest(5, "abs_change"))
+  .reset_index(drop=True)
+)
+
+# Data for each plot
+improvements_df = (
+  whr.merge(
+    most_changed_countries.loc[most_changed_countries["improvement"] == True, ["country_name"]],
+    on="country_name",
+    how="inner"
+  )
+)
+
+declines_df = (
+  whr.merge(
+    most_changed_countries.loc[most_changed_countries["improvement"] == False, ["country_name"]],
+    on="country_name",
+    how="inner"
+  )
+)
+
+improvements_df["year"] = pd.to_numeric(improvements_df["year"], errors="coerce")
+declines_df["year"] = pd.to_numeric(declines_df["year"], errors="coerce")
+
+# Greatest improvements
+(
+  ggplot(improvements_df, aes(x="year", y="ladder_score", color="country_name"))
+  + geom_line(size=1.2)
+  + geom_point(size=2.5)
+  + labs(
+    title="National Happiness Over Time",
+    subtitle="For countries with the largest increases in happiness since 2011",
+    x="Year",
+    y="Happiness Score",
+    color=""
+  )
+  + theme_whr
+)
+```
+
+```{python}
+#| label: declines
+(
+  ggplot(declines_df, aes(x="year", y="ladder_score", color="country_name"))
+  + geom_line(size=1.2)
+  + geom_point(size=2.5)
+  + scale_color_manual(values=[
+    "#d62728", "#ff7f0e", "#8c564b", "#e377c2", "#7f7f7f"
+  ])
+  + labs(
+    title="National Happiness Over Time",
+    subtitle="For countries with the largest decreases in happiness since 2011",
+    x="Year",
+    y="Happiness Score",
+    color=""
+  )
+  + theme_whr
+)
+```
+
+#### Key findings
+
+- Post-Soviet and eastern European countries showed improvement trends, with Serbia, Bulgaria, and Georgia having the largest improvements in happiness.
+- Afghanistan, Lebanon, and Jordan had the most severe declines in happiness, coinciding with major political and economic events. 
+
+## Happiness Contributing Factors
+
+### Contributing factors 2024
+
+```{python}
+#| label: factor-analysis
+factor_data_2024 = whr[whr['year'] == 2024]
+
+factor_contributions = pd.DataFrame({
+  'Factor': ['GDP', 'Social Support', 'Life Expectancy', 'Freedom', 'Generosity', 'Low Corruption'],
+  'Average_Contribution': [
+    factor_data_2024['explained_by_log_gdp_per_capita'].mean(),
+    factor_data_2024['explained_by_social_support'].mean(),
+    factor_data_2024['explained_by_healthy_life_expectancy'].mean(),
+    factor_data_2024['explained_by_freedom_to_make_life_choices'].mean(),
+    factor_data_2024['explained_by_generosity'].mean(),
+    factor_data_2024['explained_by_perceptions_of_corruption'].mean()
+  ]
+}).sort_values('Average_Contribution', ascending=False)
+
+factor_plot = (
+  ggplot(
+    factor_contributions, 
+    aes(x='reorder(Factor, Average_Contribution)', y='Average_Contribution')
+  )
+  + geom_col(alpha=0.8)
+  + coord_flip()
+  + labs(
+    title="Average Contribution of Factors to Happiness",
+    subtitle="Social support and per capita GDP are the greatest contributors",
+    x="Factor",
+    y="Average Contribution to Happiness Score"
+  ) 
+  + theme_whr
+  + theme(
+    axis_text=element_text(size=11)
+  )
+)
+
+factor_plot
+```
+
+The top contributors to happiness worldwide in 2024 were social support, GDP per capita, and having a sense of freedom. 
+
+### Happiness Factor Breakdown for Top 10 Countries (2024)
+
+```{python}
+#| label: top-countries
+top_countries_2024 = (
+  whr[whr['year'] == 2024]
+  .nlargest(10, 'ladder_score')
+)
+
+factor_cols = [
+  'explained_by_log_gdp_per_capita',
+  'explained_by_social_support', 
+  'explained_by_healthy_life_expectancy',
+  'explained_by_freedom_to_make_life_choices',
+  'explained_by_generosity',
+  'explained_by_perceptions_of_corruption',
+  'dystopia_residual'
+]
+
+stacked_data = pd.melt(
+  top_countries_2024[['country_name'] + factor_cols],
+  id_vars=['country_name'],
+  var_name='Factor',
+  value_name='Contribution'
+)
+
+# Rename factors
+factor_mapping = {
+  'explained_by_log_gdp_per_capita': 'GDP per Capita',
+  'explained_by_social_support': 'Social Support',
+  'explained_by_healthy_life_expectancy': 'Life Expectancy',
+  'explained_by_freedom_to_make_life_choices': 'Freedom',
+  'explained_by_generosity': 'Generosity',
+  'explained_by_perceptions_of_corruption': 'Low Corruption',
+  'dystopia_residual': 'Dystopia + residual'
+}
+
+stacked_data['Factor'] = stacked_data['Factor'].map(factor_mapping)
+
+country_totals = stacked_data.groupby('country_name')['Contribution'].sum().sort_values(ascending=False)
+stacked_data['country_name'] = pd.Categorical(
+  stacked_data['country_name'], 
+  categories=country_totals.index, 
+  ordered=True
+)
+
+stacked_plot = (
+  ggplot(stacked_data, aes(x='country_name', y='Contribution', fill='Factor'))
+  + geom_col()
+  + labs(
+    title="Happiness Factor Breakdown for Top 10 Happiest Countries",
+    x="Country",
+    y="Contribution to Happiness Score",
+    fill="Contributing Factor"
+  )
+  + theme_whr
+  + theme(axis_text_x=element_text(angle=45, hjust=1)) 
+)
+
+stacked_plot
+```
+
+#### Patterns Among Top Countries
+
+- **Nordic countries tend to be happy**: Finland (`{python} f"{round(top_countries_2024.iloc[0]['ladder_score'], 2)}"`), Denmark (`{python} f"{round(top_countries_2024.iloc[1]['ladder_score'], 2)}"`), Iceland (`{python} f"{round(top_countries_2024.iloc[2]['ladder_score'], 2)}"`), Sweden (`{python} f"{round(top_countries_2024.iloc[3]['ladder_score'], 2)}"`), and Norway (`{python} f"{round(top_countries_2024.iloc[6]['ladder_score'], 2)}"`) show similar balanced patterns.
+- **Effect of GDP varies**: Luxembourg has the highest GDP contribution, while Costa Rica has high happiness with lower GDP contribution, but strong social factors.
+- **Balanced Approach**: No single happiness factor dominates. 
+
+## Conclusions
+
+1. **Global happiness is gradually improving**: The world has become slightly happier over the past decade.
+
+2. **Social connections and economic conditions are most important**: GDP per capita and social support are the strongest contributors to national happiness. 
+
+3. **Multiple pathways to happiness**: The top countries show that there are different combinations of factors that can lead to high happiness levels.
+
+5. **Crises can severely affect happiness**: Countries experiencing political upheaval or economic crisis show dramatic happiness declines.
