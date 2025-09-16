@@ -32,7 +32,7 @@ theme_whr = (
 
 ## Introduction
 
-This report analyzes the data from the [2025 World Happiness Report](https://www.worldhappiness.report/), which looks at global happiness trends and factors that contribute to national happiness levels from 2011 to 2024. The dataset contains happiness rankings and scores for 169 countries.
+This report analyzes the data from the 2025 World Happiness Report, which looks at global happiness trends and factors that contribute to national happiness levels from 2011 to 2024. [The dataset contains happiness rankings and scores for 169 countries.
 
 ## Global Happiness Trends
 
